@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Voxel Wave with Hand Tracking</title>
+  </head>
+  <body>
+    <canvas id="webgl"></canvas>
+    <video id="video-feed" playsinline></video>
+    <div id="ui-overlay">
+      <h1>Wave Control</h1>
+      <p>Use your hand to control the wave!</p>
+      <ul>
+        <li><strong>Pinch (Thumb + Index):</strong> Amplitude</li>
+        <li><strong>Wrist Height:</strong> Frequency</li>
+      </ul>
+    </div>
+    <div id="status">Loading...</div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

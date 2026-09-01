@@ -1,0 +1,103 @@
+body {
+    margin: 0;
+    overflow: hidden;
+    background: #000;
+    font-family: 'Inter', sans-serif;
+}
+
+canvas {
+    display: block;
+    cursor: grab;
+}
+canvas:active {
+    cursor: grabbing;
+}
+
+#ui-panel {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(15px);
+    padding: 20px;
+    border-radius: 15px;
+    color: white;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    z-index: 100;
+    width: 220px;
+    transition: opacity 0.3s ease;
+}
+
+.control-group {
+    margin-bottom: 15px;
+}
+
+label {
+    display: block;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 8px;
+    opacity: 0.7;
+}
+
+select, input, button {
+    width: 100%;
+    padding: 10px;
+    border-radius: 6px;
+    border: none;
+    background: rgba(255, 255, 255, 0.1);
+    color: white;
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition: background 0.2s ease;
+}
+
+select:hover, button:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+select:focus, button:focus {
+    outline: 1px solid rgba(255, 255, 255, 0.3);
+    outline-offset: 1px;
+}
+
+/* ── Status badge states ── */
+.status-badge {
+    font-size: 0.7rem;
+    margin-top: 10px;
+    padding: 6px 8px;
+    text-align: center;
+    border-radius: 4px;
+    background: rgba(0, 255, 150, 0.1);
+    color: #00ffaa;
+    transition: background 0.3s ease, color 0.3s ease;
+}
+
+.status-badge.active {
+    background: rgba(0, 255, 150, 0.15);
+    color: #00ffaa;
+}
+
+.status-badge.warning {
+    background: rgba(255, 180, 0, 0.15);
+    color: #ffb400;
+}
+
+.status-badge.error {
+    background: rgba(255, 60, 60, 0.15);
+    color: #ff5555;
+}
+
+/* ── Signature ── */
+.signature {
+    position: absolute;
+    bottom: 20px;
+    right: 30px;
+    color: rgba(255, 255, 255, 0.6);
+    font-family: 'Dancing Script', 'Cursive', cursive;
+    font-size: 1.5rem;
+    pointer-events: none;
+    z-index: 100;
+    text-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+}

@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <link href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@600&display=swap" rel="stylesheet">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gesture Galaxy - Rotation Control</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="ui-panel">
+    <div class="control-group">
+        <label>Visual Mode</label>
+        <select id="shape-select">
+            <option value="galaxy">Deep Space Galaxy</option>
+            <option value="saturn">Saturnian Rings</option>
+            <option value="heart">Nebula Heart</option>
+            <option value="flower">Pulsar Flower</option>
+        </select>
+    </div>
+    <div class="control-group">
+        <label>Aura Color</label>
+        <input type="color" id="color-picker" value="#3399ff">
+    </div>
+    <button id="fs-btn">Toggle Fullscreen</button>
+    <div class="status-badge" id="gesture-msg">Awaiting Camera...</div>
+</div>
+<div class="signature">gabz</div>
+
+<video id="webcam" style="display:none" autoplay playsinline></video>
+
+<script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+        }
+    }
+</script>
+
+<script type="module">
+    import * as THREE from 'three';
+    import { HandLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0";
+
+    /* ── State ── */
+    let gestureScale = 1;
+    let expansionFactor = 0;
+    const targetRotation = { x: 0, y: 0 };
+    const PARTICLE_COUNT = 30000;
+    let cameraAvailable = false;
+    let gestureActive = false;          // true when a hand is currently detected
+    let basePositions = null;           // store original positions to prevent drift
+
+    /* ── Mouse / Touch fallback state ── */
+    let isDragging = false;
+    let previousMouse = { x: 0, y: 0 };
+    let mouseRotation = { x: 0, y: 0 };
+
+    /* ── Three.js setup ── */
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    const geometry = new THREE.BufferGeometry();
+    const material = new THREE.PointsMaterial({
+        size: 0.04,
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        vertexColors: true
+    });
+
+    const particles = new THREE.Points(geometry, material);
+    scene.add(particles);
+    camera.position.z = 12;
+
+    /* ── Shape generators ── */
+    function updateShape(type) {
+        const colorInput = new THREE.Color(document.getElementById('color-picker').value);
+        const pos = new Float32Array(PARTICLE_COUNT * 3);
+        const col = new Float32Array(PARTICLE_COUNT * 3);
+
+        for (let i = 0; i < PARTICLE_COUNT; i++) {
+            let x, y, z, r, g, b;
+            const idx = i * 3;
+
+            if (type === 'galaxy') {
+                const isCore = i < PARTICLE_COUNT * 0.35;
+                if (isCore) {
+                    const radius = Math.pow(Math.random(), 2) * 2.0;
+                    const theta = Math.random() * Math.PI * 2;
+                    const phi = Math.acos(2 * Math.random() - 1);
+                    x = radius * Math.sin(phi) * Math.cos(theta);
+                    y = radius * Math.sin(phi) * Math.sin(theta);
+                    z = radius * Math.cos(phi);
+                    r = 1; g = 1; b = 1;
+                } else {
+                    // Spiral arms
+                    const armIndex = Math.floor(Math.random() * 3);
+                    const armOffset = (armIndex / 3) * Math.PI * 2;
+                    const dist = 1.5 + Math.random() * 4.5;
+                    const angle = armOffset + dist * 0.6 + (Math.random() - 0.5) * 0.4;
+                    x = Math.cos(angle) * dist + (Math.random() - 0.5) * 0.6;
+                    y = (Math.random() - 0.5) * 0.4;
+                    z = Math.sin(angle) * dist + (Math.random() - 0.5) * 0.6;
+                    r = colorInput.r; g = colorInput.g; b = colorInput.b;
+                }
+
+            } else if (type === 'saturn') {
+                // Planet core (30% of particles)
+                const isCore = i < PARTICLE_COUNT * 0.30;
+                if (isCore) {
+                    const radius = Math.pow(Math.random(), 0.33) * 2.2;
+                    const theta = Math.random() * Math.PI * 2;
+                    const phi = Math.acos(2 * Math.random() - 1);
+                    x = radius * Math.sin(phi) * Math.cos(theta);
+                    y = radius * Math.sin(phi) * Math.sin(theta) * 0.9; // slight oblate
+                    z = radius * Math.cos(phi);
+                    // Warm planet tones
+                    const warmth = 0.6 + Math.random() * 0.4;
+                    r = warmth; g = warmth * 0.85; b = warmth * 0.5;
+                } else {
+                    // Rings — flat disc with gap
+                    const ringMin = 3.2, ringMax = 6.0;
+                    const ringDist = ringMin + Math.random() * (ringMax - ringMin);
+                    const angle = Math.random() * Math.PI * 2;
+                    x = Math.cos(angle) * ringDist;
+                    y = (Math.random() - 0.5) * 0.15; // very thin
+                    z = Math.sin(angle) * ringDist;
+                    // Ring particles get the user's chosen color
+                    const bright = 0.6 + Math.random() * 0.4;
+                    r = colorInput.r * bright;
+                    g = colorInput.g * bright;
+                    b = colorInput.b * bright;
+                }
+
+            } else if (type === 'heart') {
+                const phi = Math.random() * Math.PI * 2;
+                x = 16 * Math.pow(Math.sin(phi), 3);
+                y = 13 * Math.cos(phi) - 5 * Math.cos(2 * phi) - 2 * Math.cos(3 * phi) - Math.cos(4 * phi);
+                z = (Math.random() - 0.5) * 5;
+                const s = 0.3; x *= s; y *= s; z *= s;
+                r = colorInput.r; g = colorInput.g; b = colorInput.b;
+
+            } else if (type === 'flower') {
+                // Rose / petal curve  r = cos(k*theta)
+                const k = 5;                              // 5-petal flower
+                const theta = Math.random() * Math.PI * 2;
+                const maxR = 4.5;
+                const petalR = Math.abs(Math.cos(k * theta));
+                const rad = petalR * maxR * (0.3 + Math.random() * 0.7);
+                x = Math.cos(theta) * rad;
+                y = Math.sin(theta) * rad;
+                z = (Math.random() - 0.5) * 1.5;
+                // Gradient color from center outward
+                const t = rad / maxR;
+                r = THREE.MathUtils.lerp(1, colorInput.r, t);
+                g = THREE.MathUtils.lerp(1, colorInput.g, t);
+                b = THREE.MathUtils.lerp(1, colorInput.b, t);
+            }
+
+            pos[idx] = x; pos[idx + 1] = y; pos[idx + 2] = z;
+            col[idx] = r; col[idx + 1] = g; col[idx + 2] = b;
+        }
+
+        // Store base positions so we can drift without permanent mutation
+        basePositions = new Float32Array(pos);
+
+        geometry.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+        geometry.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    }
+
+    /* ── Hand tracking ── */
+    let handLandmarker;
+    const video = document.getElementById('webcam');
+    const gestureMsg = document.getElementById('gesture-msg');
+
+    async function setupGestures() {
+        try {
+            const vision = await FilesetResolver.forVisionTasks(
+                "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm"
+            );
+            handLandmarker = await HandLandmarker.createFromOptions(vision, {
+                baseOptions: {
+                    modelAssetPath: "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task"
+                },
+                runningMode: "VIDEO",
+                numHands: 1
+            });
+
+            const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+            video.srcObject = stream;
+            cameraAvailable = true;
+            gestureMsg.innerText = "SYSTEM ACTIVE";
+            gestureMsg.classList.remove('error', 'warning');
+            gestureMsg.classList.add('active');
+        } catch (err) {
+            console.warn("Camera / gesture setup failed:", err);
+            cameraAvailable = false;
+            gestureMsg.innerText = "No Camera — Use Mouse";
+            gestureMsg.classList.remove('active');
+            gestureMsg.classList.add('warning');
+        }
+    }
+
+    function updateGestures() {
+        if (!handLandmarker || !cameraAvailable || video.readyState < 2) {
+            gestureActive = false;
+            return;
+        }
+
+        const results = handLandmarker.detectForVideo(video, performance.now());
+
+        if (results.landmarks && results.landmarks.length > 0) {
+            gestureActive = true;
+            const hand = results.landmarks[0];
+
+            targetRotation.y = (hand[9].x - 0.5) * Math.PI * 2;
+            targetRotation.x = (hand[9].y - 0.5) * Math.PI;
+
+            const dist = Math.sqrt(
+                Math.pow(hand[8].x - hand[4].x, 2) +
+                Math.pow(hand[8].y - hand[4].y, 2)
+            );
+            gestureScale = THREE.MathUtils.lerp(gestureScale, 0.4 + dist * 5, 0.1);
+            expansionFactor = THREE.MathUtils.lerp(expansionFactor, (0.5 - hand[9].y) * 2, 0.1);
+        } else {
+            gestureActive = false;
+        }
+    }
+
+    /* ── Mouse / Touch controls (always available as fallback) ── */
+    function onPointerDown(e) {
+        isDragging = true;
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        previousMouse = { x: clientX, y: clientY };
+    }
+
+    function onPointerMove(e) {
+        if (!isDragging) return;
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        const dx = clientX - previousMouse.x;
+        const dy = clientY - previousMouse.y;
+        mouseRotation.y += dx * 0.005;
+        mouseRotation.x += dy * 0.005;
+        // Clamp vertical rotation
+        mouseRotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, mouseRotation.x));
+        previousMouse = { x: clientX, y: clientY };
+    }
+
+    function onPointerUp() {
+        isDragging = false;
+    }
+
+    renderer.domElement.addEventListener('mousedown', onPointerDown);
+    renderer.domElement.addEventListener('mousemove', onPointerMove);
+    renderer.domElement.addEventListener('mouseup', onPointerUp);
+    renderer.domElement.addEventListener('mouseleave', onPointerUp);
+    renderer.domElement.addEventListener('touchstart', onPointerDown, { passive: true });
+    renderer.domElement.addEventListener('touchmove', onPointerMove, { passive: true });
+    renderer.domElement.addEventListener('touchend', onPointerUp);
+
+    // Scroll to zoom
+    renderer.domElement.addEventListener('wheel', (e) => {
+        camera.position.z = THREE.MathUtils.clamp(camera.position.z + e.deltaY * 0.01, 3, 30);
+    }, { passive: true });
+
+    /* ── Animation loop ── */
+    function animate() {
+        requestAnimationFrame(animate);
+        updateGestures();
+
+        // Decide rotation source
+        if (gestureActive) {
+            // Hand-gesture driven rotation
+            particles.rotation.y = THREE.MathUtils.lerp(particles.rotation.y, targetRotation.y, 0.05);
+            particles.rotation.x = THREE.MathUtils.lerp(particles.rotation.x, targetRotation.x, 0.05);
+        } else if (isDragging) {
+            // Mouse/touch driven rotation
+            particles.rotation.y = THREE.MathUtils.lerp(particles.rotation.y, mouseRotation.y, 0.08);
+            particles.rotation.x = THREE.MathUtils.lerp(particles.rotation.x, mouseRotation.x, 0.08);
+        }
+
+        // Idle auto-rotation (always ticks)
+        particles.rotation.y += 0.001;
+        mouseRotation.y += 0.001; // keep in sync so no "jump" on next drag
+
+        // Scale from gesture pinch
+        particles.scale.setScalar(gestureScale);
+
+        // Expansion effect — applied additively from base positions
+        if (geometry.attributes.position && basePositions) {
+            const posArr = geometry.attributes.position.array;
+            if (Math.abs(expansionFactor) > 0.01) {
+                for (let i = 0; i < posArr.length; i++) {
+                    posArr[i] = basePositions[i] + (Math.random() - 0.5) * expansionFactor * 0.15;
+                }
+                geometry.attributes.position.needsUpdate = true;
+            } else {
+                // Snap back to base when not expanding (prevents drift)
+                if (geometry.attributes.position.needsUpdate) {
+                    for (let i = 0; i < posArr.length; i++) {
+                        posArr[i] = basePositions[i];
+                    }
+                    geometry.attributes.position.needsUpdate = true;
+                }
+            }
+        }
+
+        renderer.render(scene, camera);
+    }
+
+    /* ── Event listeners ── */
+    document.getElementById('shape-select').addEventListener('change', (e) => updateShape(e.target.value));
+    document.getElementById('color-picker').addEventListener('input', () => updateShape(document.getElementById('shape-select').value));
+    document.getElementById('fs-btn').addEventListener('click', () => {
+        if (!document.fullscreenElement) document.documentElement.requestFullscreen();
+        else document.exitFullscreen();
+    });
+
+    window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    /* ── Boot ── */
+    updateShape('galaxy');
+    setupGestures();
+    animate();
+</script>
+</body>
+</html>
